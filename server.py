@@ -44,7 +44,8 @@ def manejar_cliente(conn, addr, lista_clientes, lock_clientes):
         if not credenciales or "," not in credenciales:
             conn.sendall(
                 "Formato incorrecto. Debes enviar: usuario,contraseña".encode('utf-8')
-            )
+                )
+            conn.close()
             return
 
         usuario_ingresado, pass_ingresada = credenciales.split(",", 1)
@@ -85,7 +86,8 @@ def manejar_cliente(conn, addr, lista_clientes, lock_clientes):
                 "Error: Usuario o contraseña incorrectos. Desconectando...".encode('utf-8')
             )
             print(f"[{addr}] Autenticación fallida.")
-            return
+            conn.close()
+            return 
 
     except Exception as e:
         print(f"[{addr}] Error durante la autenticación: {e}")
@@ -96,7 +98,7 @@ def manejar_cliente(conn, addr, lista_clientes, lock_clientes):
             )
         except OSError:
             pass
-
+        conn.close()
         return
 
     finally:

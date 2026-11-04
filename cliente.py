@@ -68,6 +68,7 @@ def funcion_cliente():
 
             # Si el mensaje es /adios, salimos del bucle
             if msg.strip().lower() == "/adios":
+                hilo.join()
                 break
 
     except ConnectionRefusedError:
