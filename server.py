@@ -1,6 +1,7 @@
 import socket
 import threading
 import mysql.connector
+from datetime import datetime
 # HILO PARA HABLAR CON EL SERVIDOR
 # Permite que el servidor escriba mensajes desde la consola y los envíe a todos los clientes conectados.
 
@@ -142,11 +143,28 @@ def manejar_cliente(conn, addr, lista_clientes, lock_clientes):
 
                 conn.sendall(lista_str.encode('utf-8'))
 
+            elif comando == "/hora":
+                hora_actual = datetime.now().strftime("%H:%M:%S")
+                conn.sendall(
+                    f"Hora actual del servidor: {hora_actual}".encode('utf-8')
+                    )
+            
+            if texto.startswith('"') and texto.endswith('"'):
+                texto = texto[1:-1]
+
+            if not texto:
+                conn.sendall(
+                    'Uso correcto: /todos "mensaje"'.encode('utf-8')
+                    )
+            else:
+                # Obtenemos una copia de los clientes conectados
+                with lock_clientes:
+                    clientes = lista_clientes.copy()
+                    mensaje_todos = f"[{usuario} a todos]: {texto}"
+
             else:
                 # RESPUESTA ECO (provisoria)
                 print(f"[{usuario}] dice: {mensaje}")
-
-                conn.sendall(f"Eco: {mensaje}".encode('utf-8'))
 
         except (ConnectionResetError, OSError):
             break
