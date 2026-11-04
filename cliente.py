@@ -8,7 +8,23 @@ def funcion_cliente():
     
         s.connect((host, port)) # conecto al servidor pasando la ip y el puerto
         print("Conectado al servidor")
+        print("\n=== AUTENTICACIÓN REQUERIDA ===")
+        print("Por favor, ingresa tus credenciales en el formato: usuario,contraseña")
+        print("Ejemplo: admin,1234")
+        credenciales = input("Credenciales: ")
+        s.send(credenciales.encode('utf-8'))
 
+        # Recibimos la respuesta de validación del servidor
+        respuesta_login = s.recv(1024).decode('utf-8')
+        print(respuesta_login)
+        # Si la autenticación falla, cerramos el cliente
+        if "Error" in respuesta_login or "Formato" in respuesta_login:
+            s.close()
+            return
+
+        print("\n--- INICIO DEL CHAT ---")
+        print("Comandos disponibles: /users (para ver usuarios), /adios (para salir)\n")
+        
         while True: #Bucle infinito para enviar y recibir mensajes
             msg = input(">")   #ingreso el mensaje por teclado
             s.send(msg.encode('utf-8')) #mando el mensaje 
