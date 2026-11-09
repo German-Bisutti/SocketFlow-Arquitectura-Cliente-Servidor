@@ -46,7 +46,7 @@ def funcion_cliente():
             return
 
         print("\n--- INICIO DEL CHAT ---")
-        print("Comandos disponibles: /usuarios, /adios\n")
+        print("Comandos disponibles: /usuarios, /hora, /todos, /repos, /followers, /adios\n")
 
         # Creamos un hilo para recibir mensajes del servidor
         hilo = threading.Thread(
@@ -68,6 +68,7 @@ def funcion_cliente():
 
             # Si el mensaje es /adios, salimos del bucle
             if msg.strip().lower() == "/adios":
+                hilo.join()
                 break
 
     except ConnectionRefusedError:
