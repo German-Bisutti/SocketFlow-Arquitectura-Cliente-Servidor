@@ -6,7 +6,7 @@ def recibir_mensajes(s):
     while True:
         try:
             # Esperamos recibir un mensaje del servidor
-            mensaje = s.recv(1024).decode('utf-8')
+            mensaje = s.recv(8192).decode('utf-8')
 
             # Si el mensaje está vacío, el servidor cerró la conexión
             if not mensaje:

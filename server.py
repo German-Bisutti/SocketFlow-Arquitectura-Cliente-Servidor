@@ -2,7 +2,8 @@ import socket  # Módulo para crear conexiones de red (sockets TCP)
 import threading # Módulo para trabajar con hilos (varios clientes a la vez)
 import mysql.connector # Módulo para conectarse a la base de datos MySQL
 from datetime import datetime    # Clase para obtener la fecha y hora actual (usada en /hora)
-
+import requests # Módulo para hacer peticiones HTTP (usado en /repos y /followers)
+MAX_MOSTRAR = 20 # Cantidad máxima de repositorios o followers a mostrar en la consola del cliente
 # HILO PARA HABLAR CON EL SERVIDOR
 
 # Permite que el administrador escriba en la consola del servidor y que ese mensaje se envíe a todos los clientes conectados.
@@ -46,197 +47,150 @@ def difundir_mensaje(texto, remitente_conn, lista_clientes, lock_clientes):
 
     return enviados # Devolvemos cuántos lo recibieron
 
+# Permite consultar los followers de un usuario de GitHub mediante la API pública
+def obtener_followers(nombre_usuario):
+    url = f"https://api.github.com/users/{nombre_usuario}/followers"  # Dirección de la API
+    respuesta = requests.get(url, params={"per_page": 100})  # Pedimos hasta 100 resultados
+    if respuesta.status_code != 200:  # Si no salió bien
+        return None
+    return respuesta.json()  # Convertimos el JSON en una lista de Python
+
+# Permite consultar los repositorios de un usuario de GitHub mediante la API pública
+def obtener_repositorios(nombre_usuario):
+    url = f"https://api.github.com/users/{nombre_usuario}/repos"  # Dirección de la API
+    respuesta = requests.get(url, params={"per_page": 100})  # per_page=100 porque por defecto trae solo 30
+    if respuesta.status_code != 200:  # 200 = todo bien; otro código = usuario inexistente o error
+        return None
+    return respuesta.json()  # Convertimos el JSON en una lista de Python
+
+# Permite guardar los followers de un usuario de GitHub en la base de datos MySQL
+def guardar_followers(usuario_github, followers):
+    db = mysql.connector.connect(host="localhost", user="root", password="", database="redes_tp_final")  # Conexión a MySQL
+    cursor = db.cursor()  # Cursor para ejecutar consultas
+ 
+    for follower in followers:  # Una vuelta por cada follower
+        cursor.execute(
+            "INSERT INTO followers (usuario, nombre_follower, fecha_guardado) VALUES (%s, %s, NOW())",
+            (usuario_github, follower["login"])  # "login" es el nombre del follower en el JSON
+        )
+ 
+    db.commit()  # Confirmamos los cambios
+    cursor.close()  # Cerramos el cursor
+    db.close()  # Cerramos la conexión
+ 
+# Permite guardar los repositorios de un usuario de GitHub en la base de datos MySQL
+def guardar_repositorios(usuario_github, repos):
+    db = mysql.connector.connect(host="localhost", user="root", password="", database="redes_tp_final")  # Conexión a MySQL
+    cursor = db.cursor()  # Cursor para ejecutar consultas
+ 
+    for repo in repos:  # Una inserción por cada repositorio
+        cursor.execute(
+            "INSERT INTO repositorios (usuario, nombre_repo, url_repo, fecha_guardado) VALUES (%s, %s, %s, NOW())",  # NOW() = fecha actual
+            (usuario_github, repo["name"], repo["html_url"])  # Nombre y URL vienen en el JSON de GitHub
+        )
+ 
+    db.commit()  # Confirmamos los cambios (sin esto no se guardan)
+    cursor.close()  # Cerramos el cursor
+    db.close()  # Cerramos la conexión
+
 # Permite ejecutar cada cliente uno por uno
 def manejar_cliente(conn, addr, lista_clientes, lock_clientes):
-
-    print(f"\nNUEVA CONEXIÓN: {addr}") # Avisamos que llegó un cliente nuevo
-
-    db = None # Variable para la conexión a MySQL (todavía no existe)
-    cursor = None # Variable para el cursor de MySQL (todavía no existe)
-    usuario = None # Nombre del usuario (se completa al autenticar)
-    autenticado = False # Indica si el cliente ya pasó el login
-
-    try: # Autentificacion del cliente
-        # 1. RECIBIR CREDENCIALES
-        credenciales = conn.recv(1024).decode('utf-8') # Esperamos "usuario,contraseña" y lo pasamos de bytes a texto
-
-        if not credenciales or "," not in credenciales: # Si llegó vacío o sin coma, el formato es incorrecto
-            conn.sendall( # Le avisamos al cliente cuál es el formato correcto
-                "Formato incorrecto. Debes enviar: usuario,contraseña".encode('utf-8')
-            )
-            return # Terminamos el hilo
-
-        usuario_ingresado, pass_ingresada = credenciales.split(",", 1) # Dividimos en la primera coma: usuario y contraseña
-
-        usuario = usuario_ingresado.strip() # Sacamos espacios sobrantes del nombre de usuario
-
-        # 2. CONEXION A MYSQL
-        db = mysql.connector.connect(# Abrimos conexión con la base de datos
-            host="localhost", # El servidor MySQL está en esta misma PC
-            user="root", # Usuario por defecto de XAMPP
-            password="", # XAMPP no trae contraseña por defecto
-            database="redes_tp_final" # Base de datos del trabajo práctico
-        )
-
-        cursor = db.cursor() # El cursor permite ejecutar consultas SQL
-
-        # 3. VALIDAR CREDENCIALES
-        sql = """SELECT * FROM usuarios WHERE nombre_usuario = %s AND contrasena = %s """ # %s son parámetros (evitan inyección SQL)
-
-        cursor.execute(sql, (usuario, pass_ingresada.strip())) # Ejecutamos la consulta reemplazando los %s por los valores
-        resultado = cursor.fetchone() # Traemos una fila; si no existe el usuario, devuelve None
-
-        if resultado: # Si encontró al usuario con esa contraseña
-            conn.sendall(
-                "¡Bienvenido al servidor! Autenticación exitosa.".encode('utf-8') # Avisamos que el login fue correcto
-            )
-
-            # Agregamos al cliente autenticado a la lista
-            with lock_clientes: # Bloqueamos la lista compartida
-                lista_clientes.append((conn, addr, usuario)) # Agregamos al cliente autenticado
-
-            autenticado = True # Marcamos que ya está autenticado
-
-            print(f"[{addr}] Autenticado como: {usuario}") # Registramos el login en la consola del servidor
-
-        else: # Si no coinciden usuario y contraseña
-            conn.sendall(
-                "Error: Usuario o contraseña incorrectos. Desconectando...".encode('utf-8') # Avisamos del error al cliente
-            )
-            print(f"[{addr}] Autenticación fallida.") # Registramos el intento fallido
-            conn.close() # Cerramos la conexión con este cliente
-            return # Terminamos el hilo
-
-    except Exception as e: # Cualquier error inesperado (ej: MySQL apagado)
-        print(f"[{addr}] Error durante la autenticación: {e}") # Mostramos el error en consola
-
-        try: # Intentamos avisarle al cliente
-            conn.sendall(
-                "Error interno del servidor en la autenticación.".encode('utf-8')
-            )
-        except OSError: # Si el cliente ya se había ido, ignoramos el error
-            pass
-        return # Terminamos el hilo
-
-    finally: # El finally se ejecuta SIEMPRE (haya error o no)
-        # Cerramos la conexión a MySQL
-        if cursor is not None: # Si se llegó a crear el cursor lo cerramos
-            cursor.close()
-
-        if db is not None and db.is_connected(): # Si se llegó a abrir la conexión y sigue abierta la cerramos (liberamos recursos de MySQL)
-            db.close()
-    
-    # 4. RECEPCION DE MENSAJES DEL CLIENTE
-    while True: # Bucle que atiende al cliente hasta que se desconecte
+    print(f"\nNUEVA CONEXIÓN: {addr}")  # Avisamos que llegó un cliente
+ 
+    # 1. AUTENTICACIÓN
+    credenciales = conn.recv(1024).decode('utf-8')  # Recibimos "usuario,contraseña"
+ 
+    if "," not in credenciales:  # Si no tiene coma, el formato está mal
+        conn.sendall("Formato incorrecto. Debes enviar: usuario,contraseña".encode('utf-8'))
+        conn.close()  # Cerramos la conexión
+        return  # Termina el hilo
+ 
+    usuario, contrasena = credenciales.split(",", 1)  # Separamos en la primera coma
+    usuario = usuario.strip()  # Sacamos espacios sobrantes
+    contrasena = contrasena.strip()
+ 
+    db = mysql.connector.connect(host="localhost", user="root", password="", database="redes_tp_final")  # Conexión a MySQL
+    cursor = db.cursor()  # Cursor para ejecutar consultas
+    cursor.execute(
+        "SELECT * FROM usuarios WHERE nombre_usuario = %s AND contrasena = %s",  # Buscamos usuario y contraseña
+        (usuario, contrasena)  # Los %s se reemplazan por estos valores
+    )
+    resultado = cursor.fetchone()  # Trae una fila, o None si no hay coincidencia
+    cursor.close()  # Cerramos el cursor
+    db.close()  # Cerramos la conexión
+ 
+    if not resultado:  # Usuario o contraseña incorrectos
+        conn.sendall("Error: Usuario o contraseña incorrectos. Desconectando...".encode('utf-8'))
+        conn.close()  # Cerramos la sesión
+        return  # Termina el hilo
+ 
+    conn.sendall("¡Bienvenido al servidor! Autenticación exitosa.".encode('utf-8'))  # Mensaje de bienvenida
+ 
+    with lock_clientes:  # Bloqueamos la lista compartida
+        lista_clientes.append((conn, addr, usuario))  # Agregamos al cliente a los conectados
+    print(f"[{addr}] Autenticado como: {usuario}")
+ 
+    # 2. RECEPCIÓN DE MENSAJES Y COMANDOS
+    while True:  # Atendemos al cliente hasta que se desconecte
         try:
-            mensaje = conn.recv(1024).decode('utf-8') # Esperamos un mensaje del cliente (bloquea hasta que llegue)
-
-            if not mensaje: # Mensaje vacío = el cliente cerró la conexión
+            mensaje = conn.recv(1024).decode('utf-8')  # Esperamos un mensaje del cliente
+ 
+            if not mensaje:  # Mensaje vacío = el cliente cerró la conexión
                 break
-
-            # Separamos comando y argumento, conservando el texto original
-            partes = mensaje.strip().split(" ", 1) # Dividimos en el primer espacio: ["/todos", "Hola a todos"]
-            comando = partes[0].lower() # Primera parte en minúsculas = el comando
-            argumento = partes[1].strip() if len(partes) > 1 else "" # Segunda parte = el argumento (o vacío si no hay)
-
-            # COMANDO /ADIOS
-            if comando == "/adios":
-                conn.sendall(
-                    "Hasta luego. Te has desconectado del servidor.".encode('utf-8') # Despedimos al cliente
-                )
-                print(f"[{addr}] Solicitó desconectarse.") # Registramos la salida en consola
-                break # Salimos del bucle para cerrar la conexión
-
-            # COMANDO /USUARIOS
-            elif comando == "/usuarios":
-
-                print(f"[{addr}] Solicitó la lista de usuarios.") # Registramos el pedido
-
-                lista_str = "Usuarios conectados actualmente:\n" # Texto inicial de la respuesta
  
-                with lock_clientes: # Bloqueamos la lista compartida
-                    clientes = lista_clientes.copy() # La copiamos para recorrerla tranquilos
-
-                for cliente_conn, cliente_addr, nombre_usr in clientes: # Recorremos los clientes conectados
-                    lista_str += f"- {nombre_usr} ({cliente_addr})\n" # Agregamos una línea por usuario
-
-                conn.sendall(lista_str.encode('utf-8')) # Enviamos la lista completa al cliente que la pidió
-
-            # COMANDO /HORA
-            elif comando == "/hora":
+            partes = mensaje.strip().split(" ", 1)  # Separamos comando y argumento: "/repos", "nombre del usuario"
+            comando = partes[0].lower()  # El comando, en minúsculas
+            argumento = partes[1].strip() if len(partes) > 1 else ""  # El resto del texto, o vacío si no hay
  
-                print(f"[{addr}] Solicitó la hora.") # Registramos el pedido en consola
+            if comando == "/adios":  # Despedida
+                conn.sendall("Hasta luego. Te has desconectado del servidor.".encode('utf-8'))
+                break  # Salimos del bucle para desconectar
  
-                ahora = datetime.now() # Obtenemos la fecha y hora actuales del servidor
+            elif comando == "/usuarios":  # Lista de usuarios conectados
+                lista_str = "Usuarios conectados:\n"  # Texto inicial
+                with lock_clientes:  # Bloqueamos la lista mientras la recorremos
+                    for cliente_conn, cliente_addr, nombre_usr in lista_clientes:
+                        lista_str += f"- {nombre_usr}\n"  # Una línea por usuario
+                conn.sendall(lista_str.encode('utf-8'))  # Enviamos la lista
  
-                hora_str = ahora.strftime("%d/%m/%Y %H:%M:%S") # Formato: día/mes/año horas:minutos:segundos
+            elif comando == "/hora":  # Hora actual del servidor
+                hora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")  # Formato día/mes/año hora:min:seg
+                conn.sendall(f"Hora del servidor: {hora}".encode('utf-8'))
  
-                conn.sendall( # Enviamos la hora al cliente que la pidió
-                    f"Fecha y hora del servidor: {hora_str}".encode('utf-8')
-                )
-
-            # COMANDO /TODOS
-            elif comando == "/todos":
-
-                if not argumento: # Si escribió "/todos" sin mensaje
-                    conn.sendall(
-                        "Uso correcto: /todos <mensaje>".encode('utf-8') # Le explicamos cómo se usa
-                    )
-                    continue # Volvemos al inicio del while (esperar otro mensaje)
-
-                print(f"[{usuario}] -> TODOS: {argumento}") # Registramos el mensaje en consola
-
-                cantidad = difundir_mensaje( # Enviamos a todos menos al remitente
-                    f"[{usuario} (a todos)]: {argumento}",
-                    conn, # Socket del remitente (para excluirlo)
-                    lista_clientes, # Lista compartida de clientes
-                    lock_clientes # Candado de la lista
-                )
-
-                if cantidad == 0: # Si no había nadie más conectado
-                    conn.sendall(
-                        "No hay otros usuarios conectados para recibir tu mensaje.".encode('utf-8')
-                    )
-                else: # Si al menos uno lo recibió
-                    conn.sendall(
-                        f"Mensaje enviado a {cantidad} usuario(s).".encode('utf-8')
-                    )
-
-            # COMANDO /REPOS
-            elif comando == "/repos":
-                pass
-
-            # COMANDO /FOLLOWERS
-            elif comando == "/followers":
-                pass
-
-            else:
-                if comando.startswith("/"): # Si empieza con "/" pero no es ninguno de los anteriores
-                    conn.sendall(
-                        "Comando no reconocido.".encode('utf-8') # Avisamos que no existe ese comando
-                    )
-                else: # Si es texto normal (sin "/")
-                    print(f"[{usuario}] dice: {mensaje}") # Solo lo mostramos en la consola del servidor
-
-        except (ConnectionResetError, OSError): # Si el cliente se cae o se corta la conexión
-            break # Salimos del bucle
-
-    # 5. ELIMINAR CLIENTE DE LA LISTA
-    if autenticado: # Solo si el cliente estaba en la lista
-        with lock_clientes: # Bloqueamos la lista compartida
-            for cliente in lista_clientes: # Buscamos al cliente en la lista
-                if cliente[0] == conn: # Lo identificamos por su socket
-                    lista_clientes.remove(cliente) # Lo eliminamos de la lista
-                    break # Dejamos de buscar (ya lo encontramos)
-
-    conn.close() # Cerramos el socket de este cliente
-
-    print(f"\nDESCONEXIÓN: El cliente {addr} se ha ido.")
-
-    with lock_clientes: # Bloqueamos la lista para leer su tamaño
-        cantidad = len(lista_clientes) # Contamos cuántos clientes quedan
-
-    print(f"CLIENTES ACTIVOS: Quedan {cantidad} cliente(s).") # Mostramos cuántos quedan
+            elif comando == "/todos":  # Mensaje para todos los conectados
+                difundir_mensaje(f"[{usuario}]: {argumento}", lista_clientes, lock_clientes)
+ 
+            elif comando == "/repos":  # Guardar repositorios de un usuario de GitHub
+                repos = obtener_repositorios(argumento)  # Consultamos la API de GitHub
+                if not repos:  # None (falló) o lista vacía
+                    conn.sendall("No se encontraron repositorios.".encode('utf-8'))
+                else:
+                    guardar_repositorios(argumento, repos)  # Los guardamos en MySQL
+                    conn.sendall(f"Se guardaron {len(repos)} repositorios de {argumento}.".encode('utf-8'))
+ 
+            elif comando == "/followers":  # Guardar followers de un usuario de GitHub
+                followers = obtener_followers(argumento)  # Consultamos la API de GitHub
+                if not followers:  # None (falló) o lista vacía
+                    conn.sendall("No se encontraron followers.".encode('utf-8'))
+                else:
+                    guardar_followers(argumento, followers)  # Los guardamos en MySQL
+                    conn.sendall(f"Se guardaron {len(followers)} followers de {argumento}.".encode('utf-8'))
+ 
+            elif comando.startswith("/"):  # Empieza con "/" pero no es ninguno de los anteriores
+                conn.sendall("Comando no reconocido.".encode('utf-8'))
+ 
+            else:  # Texto normal: chat con el servidor
+                print(f"[{usuario}] dice: {mensaje}")  # Se muestra en la consola del servidor
+ 
+        except (ConnectionResetError, OSError):  # Si el cliente se cae de golpe
+            break
+ 
+    # 3. DESCONEXIÓN
+    with lock_clientes:  # Bloqueamos la lista compartida
+        lista_clientes.remove((conn, addr, usuario))  # Sacamos al cliente de los conectados
+    conn.close()  # Cerramos el socket
+    print(f"DESCONEXIÓN: El cliente {addr} se ha ido.")
+ 
 
 # FUNCION PRINCIPAL DEL SERVIDOR
 def iniciar_servidor():
