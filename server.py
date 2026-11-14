@@ -189,7 +189,7 @@ def manejar_cliente(conn, addr, lista_clientes):
                     conn.sendall("No se encontraron followers.".encode('utf-8'))
                 else:
                     guardar_followers(argumento, followers)  # Los guardamos en MySQL
-                    conn.sendall(f"Se guardaron {len(followers)} followers de {argumento}.".encode('utf-8'))
+                    respuesta = f"Se guardaron {len(followers)} followers de {argumento} en la BD.\n"
                     respuesta += "--- Primeros 20 followers ---\n"
                     for i, follower in enumerate(followers[:20], start=1):
                         respuesta += f"{i}. {follower['login']} ({follower['html_url']})\n"
@@ -210,7 +210,6 @@ def manejar_cliente(conn, addr, lista_clientes):
         lista_clientes.remove(cliente)  # Sacamos al cliente de los conectados
     conn.close()  # Cerramos el socket
     print(f"DESCONEXIÓN: El cliente {addr} se ha ido.")
- 
 
 # FUNCION PRINCIPAL DEL SERVIDOR
 def iniciar_servidor():
