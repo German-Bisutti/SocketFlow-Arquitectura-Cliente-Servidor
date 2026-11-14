@@ -3,7 +3,13 @@ import threading # Módulo para trabajar con hilos (varios clientes a la vez)
 import mysql.connector # Módulo para conectarse a la base de datos MySQL
 from datetime import datetime    # Clase para obtener la fecha y hora actual (usada en /hora)
 import requests # Módulo para hacer peticiones HTTP (usado en /repos y /followers)
+import hashlib # Hashear contrasenias 
 # HILO PARA HABLAR CON EL SERVIDOR
+
+# Permite encriptar la contrasenia
+def hashear_contrasena(contrasena):
+    contrasena_hash = hashlib.sha256(contrasena.encode("utf-8")).hexdigest() # Convierte la contraseña a bytes y genera su hash SHA-256.
+    return contrasena_hash # Devuelve la contraseña hasheada.
 
 # Permite que el administrador escriba en la consola del servidor y que ese mensaje se envíe a todos los clientes conectados.
 def enviar_mensajes(lista_clientes):
@@ -102,13 +108,13 @@ def manejar_cliente(conn, addr, lista_clientes):
  
     usuario, contrasena = credenciales.split(",", 1)  # Separamos en la primera coma
     usuario = usuario.strip()  # Sacamos espacios sobrantes
-    contrasena = contrasena.strip()
+    contrasena_hash = hashear_contrasena(contrasena.strip())
  
     db = mysql.connector.connect(host="localhost", user="root", password="", database="redes_tp_final")  # Conexión a MySQL
     cursor = db.cursor()  # Cursor para ejecutar consultas
     cursor.execute(
         "SELECT * FROM usuarios WHERE nombre_usuario = %s AND contrasena = %s",  # Buscamos usuario y contraseña
-        (usuario, contrasena)  # Los %s se reemplazan por estos valores
+        (usuario, contrasena_hash)  # Los %s se reemplazan por estos valores
     )
     resultado = cursor.fetchone()  # Trae una fila, o None si no hay coincidencia
     cursor.close()  # Cerramos el cursor
@@ -151,26 +157,40 @@ def manejar_cliente(conn, addr, lista_clientes):
                 conn.sendall(f"Hora del servidor: {hora}".encode('utf-8'))
  
             elif comando == "/todos":  # Mensaje para todos los conectados
-                difundir_mensaje(f"[{usuario}]: {argumento}", lista_clientes)
+                if not argumento:
+                    conn.sendall("Uso correcto: /todos <mensaje>".encode('utf-8'))
+                else:
+                    cant = difundir_mensaje(f"[{usuario}]: {argumento}", conn, lista_clientes)
+                    conn.sendall(f"Mensaje enviado a {cant} usuario(s).".encode('utf-8'))
  
             elif comando == "/repos":  # Guardar repositorios de un usuario de GitHub
+                if not argumento:
+                    conn.sendall("Debes escribir un usuario. Ej: /repos German-Bisutti".encode('utf-8'))
+                    continue
+
                 repos = obtener_repositorios(argumento)  # Consultamos la API de GitHub
                 if not repos:  # None (falló) o lista vacía
                     conn.sendall("No se encontraron repositorios.".encode('utf-8'))
                 else:
                     guardar_repositorios(argumento, repos)  # Los guardamos en MySQL
-                    conn.sendall(f"Se guardaron {len(repos)} repositorios de {argumento}.".encode('utf-8'))
+                    respuesta = f"Se guardaron {len(repos)} repositorios de {argumento} en la BD.\n"
+                    respuesta += "--- Primeros 20 repositorios ---\n"
                     for i, repo in enumerate(repos[:20], start=1):
                         respuesta += f"{i}. {repo['name']} -> {repo['html_url']}\n"
                     conn.sendall(respuesta.encode('utf-8'))
  
             elif comando == "/followers":  # Guardar followers de un usuario de GitHub
+                if not argumento:
+                    conn.sendall("Debes escribir un usuario. Ej: /followers octocat".encode('utf-8'))
+                    continue
+
                 followers = obtener_followers(argumento)  # Consultamos la API de GitHub
                 if not followers:  # None (falló) o lista vacía
                     conn.sendall("No se encontraron followers.".encode('utf-8'))
                 else:
                     guardar_followers(argumento, followers)  # Los guardamos en MySQL
                     conn.sendall(f"Se guardaron {len(followers)} followers de {argumento}.".encode('utf-8'))
+                    respuesta += "--- Primeros 20 followers ---\n"
                     for i, follower in enumerate(followers[:20], start=1):
                         respuesta += f"{i}. {follower['login']} ({follower['html_url']})\n"
                     conn.sendall(respuesta.encode('utf-8'))
