@@ -3,7 +3,6 @@ import threading # Módulo para trabajar con hilos (varios clientes a la vez)
 import mysql.connector # Módulo para conectarse a la base de datos MySQL
 from datetime import datetime    # Clase para obtener la fecha y hora actual (usada en /hora)
 import requests # Módulo para hacer peticiones HTTP (usado en /repos y /followers)
-MAX_MOSTRAR = 20 # Cantidad máxima de repositorios o followers a mostrar en la consola del cliente
 # HILO PARA HABLAR CON EL SERVIDOR
 
 # Permite que el administrador escriba en la consola del servidor y que ese mensaje se envíe a todos los clientes conectados.
@@ -31,9 +30,7 @@ def enviar_mensajes(lista_clientes, lock_clientes):
 # Permite ejecutar comando /todos "mensaje" para enviar mensaje a todos y te dice cuantos lo recibieron
 def difundir_mensaje(texto, remitente_conn, lista_clientes, lock_clientes):
     
-    with lock_clientes: # Bloqueamos la lista compartida
-        clientes = lista_clientes.copy() # Copiamos la lista y soltamos el candado enseguida
-
+    clientes = lista_clientes.copy() # Copiamos la lista y soltamos el candado enseguida
     enviados = 0 # Contador de mensajes enviados con éxito
 
     for cliente_conn, cliente_addr, nombre_usr in clientes: # Recorremos todos los clientes conectados
@@ -126,8 +123,7 @@ def manejar_cliente(conn, addr, lista_clientes, lock_clientes):
  
     conn.sendall("¡Bienvenido al servidor! Autenticación exitosa.".encode('utf-8'))  # Mensaje de bienvenida
  
-    with lock_clientes:  # Bloqueamos la lista compartida
-        lista_clientes.append((conn, addr, usuario))  # Agregamos al cliente a los conectados
+    lista_clientes.append((conn, addr, usuario))  # Agregamos al cliente a los conectados
     print(f"[{addr}] Autenticado como: {usuario}")
  
     # 2. RECEPCIÓN DE MENSAJES Y COMANDOS
@@ -148,9 +144,8 @@ def manejar_cliente(conn, addr, lista_clientes, lock_clientes):
  
             elif comando == "/usuarios":  # Lista de usuarios conectados
                 lista_str = "Usuarios conectados:\n"  # Texto inicial
-                with lock_clientes:  # Bloqueamos la lista mientras la recorremos
-                    for cliente_conn, cliente_addr, nombre_usr in lista_clientes:
-                        lista_str += f"- {nombre_usr}\n"  # Una línea por usuario
+                for cliente_conn, cliente_addr, nombre_usr in lista_clientes:
+                    lista_str += f"- {nombre_usr}\n"  # Una línea por usuario
                 conn.sendall(lista_str.encode('utf-8'))  # Enviamos la lista
  
             elif comando == "/hora":  # Hora actual del servidor
@@ -186,8 +181,9 @@ def manejar_cliente(conn, addr, lista_clientes, lock_clientes):
             break
  
     # 3. DESCONEXIÓN
-    with lock_clientes:  # Bloqueamos la lista compartida
-        lista_clientes.remove((conn, addr, usuario))  # Sacamos al cliente de los conectados
+    cliente = (conn, addr, usuario)
+    if cliente in lista_clientes:
+        lista_clientes.remove(cliente)  # Sacamos al cliente de los conectados
     conn.close()  # Cerramos el socket
     print(f"DESCONEXIÓN: El cliente {addr} se ha ido.")
  
@@ -203,8 +199,6 @@ def iniciar_servidor():
     server.listen() # Ponemos el socket a la escucha de conexiones
 
     clientes_activos = [] # Lista compartida de clientes autenticados
-
-    lock_clientes = threading.Lock() # Candado que protege la lista compartida
 
     print("INICIO: Servidor escuchando en el puerto 5051...") # Avisamos que el servidor está listo
 
