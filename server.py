@@ -6,13 +6,11 @@ import requests # Módulo para hacer peticiones HTTP (usado en /repos y /followe
 # HILO PARA HABLAR CON EL SERVIDOR
 
 # Permite que el administrador escriba en la consola del servidor y que ese mensaje se envíe a todos los clientes conectados.
-def enviar_mensajes(lista_clientes, lock_clientes):
+def enviar_mensajes(lista_clientes):
     while True:
         mensaje = input("\nServidor: ")
 
-         # Bloqueamos la lista para que nadie la modifique mientras la copiamos
-        with lock_clientes:
-            clientes = lista_clientes.copy() # Hacemos una copia para poder recorrerla sin el candado
+        clientes = lista_clientes.copy() # Hacemos una copia para poder recorrerla sin el candado
 
         if not clientes:
             print("No hay clientes conectados.")
@@ -28,7 +26,7 @@ def enviar_mensajes(lista_clientes, lock_clientes):
                 print(f"No se pudo enviar el mensaje a {nombre_usr}.")
 
 # Permite ejecutar comando /todos "mensaje" para enviar mensaje a todos y te dice cuantos lo recibieron
-def difundir_mensaje(texto, remitente_conn, lista_clientes, lock_clientes):
+def difundir_mensaje(texto, remitente_conn, lista_clientes):
     
     clientes = lista_clientes.copy() # Copiamos la lista y soltamos el candado enseguida
     enviados = 0 # Contador de mensajes enviados con éxito
@@ -91,7 +89,7 @@ def guardar_repositorios(usuario_github, repos):
     db.close()  # Cerramos la conexión
 
 # Permite ejecutar cada cliente uno por uno
-def manejar_cliente(conn, addr, lista_clientes, lock_clientes):
+def manejar_cliente(conn, addr, lista_clientes):
     print(f"\nNUEVA CONEXIÓN: {addr}")  # Avisamos que llegó un cliente
  
     # 1. AUTENTICACIÓN
@@ -153,7 +151,7 @@ def manejar_cliente(conn, addr, lista_clientes, lock_clientes):
                 conn.sendall(f"Hora del servidor: {hora}".encode('utf-8'))
  
             elif comando == "/todos":  # Mensaje para todos los conectados
-                difundir_mensaje(f"[{usuario}]: {argumento}", lista_clientes, lock_clientes)
+                difundir_mensaje(f"[{usuario}]: {argumento}", lista_clientes)
  
             elif comando == "/repos":  # Guardar repositorios de un usuario de GitHub
                 repos = obtener_repositorios(argumento)  # Consultamos la API de GitHub
@@ -162,6 +160,9 @@ def manejar_cliente(conn, addr, lista_clientes, lock_clientes):
                 else:
                     guardar_repositorios(argumento, repos)  # Los guardamos en MySQL
                     conn.sendall(f"Se guardaron {len(repos)} repositorios de {argumento}.".encode('utf-8'))
+                    for i, repo in enumerate(repos[:20], start=1):
+                        respuesta += f"{i}. {repo['name']} -> {repo['html_url']}\n"
+                    conn.sendall(respuesta.encode('utf-8'))
  
             elif comando == "/followers":  # Guardar followers de un usuario de GitHub
                 followers = obtener_followers(argumento)  # Consultamos la API de GitHub
@@ -170,6 +171,9 @@ def manejar_cliente(conn, addr, lista_clientes, lock_clientes):
                 else:
                     guardar_followers(argumento, followers)  # Los guardamos en MySQL
                     conn.sendall(f"Se guardaron {len(followers)} followers de {argumento}.".encode('utf-8'))
+                    for i, follower in enumerate(followers[:20], start=1):
+                        respuesta += f"{i}. {follower['login']} ({follower['html_url']})\n"
+                    conn.sendall(respuesta.encode('utf-8'))
  
             elif comando.startswith("/"):  # Empieza con "/" pero no es ninguno de los anteriores
                 conn.sendall("Comando no reconocido.".encode('utf-8'))
@@ -205,7 +209,7 @@ def iniciar_servidor():
     # 2. CREAR HILO DE ENVIO DEL SERVIDOR
     hilo_envio = threading.Thread( # Creamos el hilo del administrador
         target=enviar_mensajes, # Función que ejecutará el hilo
-        args=(clientes_activos, lock_clientes), # Argumentos que recibe esa función
+        args=(clientes_activos,), # Argumentos que recibe esa función
         daemon=True # Daemon: se cierra solo cuando termina el programa
     )
 
@@ -218,7 +222,7 @@ def iniciar_servidor():
 
         hilo = threading.Thread( # Creamos un hilo dedicado a este cliente
             target=manejar_cliente, # Función que atiende al cliente
-            args=(conn, addr, clientes_activos, lock_clientes) # Argumentos de esa función
+            args=(conn, addr, clientes_activos) # Argumentos de esa función
         )
 
         hilo.start() # Arrancamos el hilo (el while sigue aceptando otros)
