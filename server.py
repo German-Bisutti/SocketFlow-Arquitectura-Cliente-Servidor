@@ -4,7 +4,6 @@ import mysql.connector # Módulo para conectarse a la base de datos MySQL
 from datetime import datetime    # Clase para obtener la fecha y hora actual (usada en /hora)
 import requests # Módulo para hacer peticiones HTTP (usado en /repos y /followers)
 import hashlib # Hashear contrasenias 
-# HILO PARA HABLAR CON EL SERVIDOR
 
 # Permite encriptar la contrasenia
 def hashear_contrasena(contrasena):
@@ -16,7 +15,7 @@ def enviar_mensajes(lista_clientes):
     while True:
         mensaje = input("\nServidor: ")
 
-        clientes = lista_clientes.copy() # Hacemos una copia para poder recorrerla sin el candado
+        clientes = lista_clientes.copy() # Hacemos una copia para poder recorrerla
 
         if not clientes:
             print("No hay clientes conectados.")
@@ -34,7 +33,7 @@ def enviar_mensajes(lista_clientes):
 # Permite ejecutar comando /todos "mensaje" para enviar mensaje a todos y te dice cuantos lo recibieron
 def difundir_mensaje(texto, remitente_conn, lista_clientes):
     
-    clientes = lista_clientes.copy() # Copiamos la lista y soltamos el candado enseguida
+    clientes = lista_clientes.copy() # Copiamos la lista
     enviados = 0 # Contador de mensajes enviados con éxito
 
     for cliente_conn, cliente_addr, nombre_usr in clientes: # Recorremos todos los clientes conectados
@@ -94,7 +93,7 @@ def guardar_repositorios(usuario_github, repos):
     cursor.close()  # Cerramos el cursor
     db.close()  # Cerramos la conexión
 
-# Permite ejecutar cada cliente uno por uno
+# Permite majear los clientes en paralelo
 def manejar_cliente(conn, addr, lista_clientes):
     print(f"\nNUEVA CONEXIÓN: {addr}")  # Avisamos que llegó un cliente
  
