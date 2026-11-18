@@ -98,7 +98,7 @@ def manejar_cliente(conn, addr, lista_clientes):
     print(f"\nNUEVA CONEXIÓN: {addr}")  # Avisamos que llegó un cliente
  
     # 1. AUTENTICACIÓN
-    credenciales = conn.recv(1024).decode('utf-8')  # Recibimos "usuario,contraseña"
+    credenciales = conn.recv(1024).decode('utf-8')  # Recibimos "usuario,contraseña" o "/register usuario,contraseña"
  
     if "," not in credenciales:  # Si no tiene coma, el formato está mal
         conn.sendall("Formato incorrecto. Debes enviar: usuario,contraseña".encode('utf-8'))
@@ -154,6 +154,17 @@ def manejar_cliente(conn, addr, lista_clientes):
             elif comando == "/hora":  # Hora actual del servidor
                 hora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")  # Formato día/mes/año hora:min:seg
                 conn.sendall(f"Hora del servidor: {hora}".encode('utf-8'))
+
+            elif comando == "/comandos":  # Lista de comandos disponibles
+                comandos = [
+                    "/usuarios - Ver usuarios conectados",
+                    "/hora - Ver hora actual del servidor",
+                    "/todos <mensaje> - Enviar mensaje a todos los usuarios conectados",
+                    "/repos <usuario> - Ver repositorios de un usuario de GitHub",
+                    "/followers <usuario> - Ver seguidores de un usuario de GitHub",
+                    "/adios - Desconectarse del servidor"
+                ]
+                conn.sendall("\n".join(comandos).encode('utf-8'))
  
             elif comando == "/todos":  # Mensaje para todos los conectados
                 if not argumento:
