@@ -38,7 +38,6 @@ def funcion_cliente():
         print(f"\n{AMARILLO}=== AUTENTICACIÓN REQUERIDA ==={RESET}")
         print("Por favor, ingresa tus credenciales en el formato: usuario,contraseña")
         print("Ejemplo: admin,1234")
-        print("Para crear un usuario nuevo escribí: /register usuario,contraseña")
 
         credenciales = input("Credenciales: ")
         s.sendall(credenciales.encode('utf-8'))

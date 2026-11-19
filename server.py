@@ -67,6 +67,8 @@ def obtener_repositorios(nombre_usuario):
 def guardar_followers(usuario_github, followers):
     db = mysql.connector.connect(host="localhost", user="root", password="", database="redes_tp_final")  # Conexión a MySQL
     cursor = db.cursor()  # Cursor para ejecutar consultas
+
+    cursor.execute("DELETE FROM followers WHERE usuario = %s", (usuario_github,))  # Borra los followers que ya estaban guardados de ese usuario
  
     for follower in followers:  # Una vuelta por cada follower
         cursor.execute(
@@ -82,6 +84,8 @@ def guardar_followers(usuario_github, followers):
 def guardar_repositorios(usuario_github, repos):
     db = mysql.connector.connect(host="localhost", user="root", password="", database="redes_tp_final")  # Conexión a MySQL
     cursor = db.cursor()  # Cursor para ejecutar consultas
+
+    cursor.execute("DELETE FROM repositorios WHERE usuario = %s", (usuario_github,))  # Borra los repos que ya estaban guardados de ese usuario
  
     for repo in repos:  # Una inserción por cada repositorio
         cursor.execute(
@@ -98,7 +102,7 @@ def manejar_cliente(conn, addr, lista_clientes):
     print(f"\nNUEVA CONEXIÓN: {addr}")  # Avisamos que llegó un cliente
  
     # 1. AUTENTICACIÓN
-    credenciales = conn.recv(1024).decode('utf-8')  # Recibimos "usuario,contraseña" o "/register usuario,contraseña"
+    credenciales = conn.recv(1024).decode('utf-8')  # Recibimos "usuario,contraseña"
  
     if "," not in credenciales:  # Si no tiene coma, el formato está mal
         conn.sendall("Formato incorrecto. Debes enviar: usuario,contraseña".encode('utf-8'))
@@ -160,8 +164,8 @@ def manejar_cliente(conn, addr, lista_clientes):
                     "/usuarios - Ver usuarios conectados",
                     "/hora - Ver hora actual del servidor",
                     "/todos <mensaje> - Enviar mensaje a todos los usuarios conectados",
-                    "/repos <usuario> - Ver repositorios de un usuario de GitHub",
-                    "/followers <usuario> - Ver seguidores de un usuario de GitHub",
+                    "/repos <usuario> - Ver repositorios de un usuario de GitHub y guardarlos en la BD",
+                    "/followers <usuario> - Ver seguidores de un usuario de GitHub y guardarlos en la BD",
                     "/adios - Desconectarse del servidor"
                 ]
                 conn.sendall("\n".join(comandos).encode('utf-8'))
